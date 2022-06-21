@@ -9,9 +9,12 @@ const (
 )
 
 const (
-	whitespace = [rune(0x0009), 0x000a, 0x000c, 0x0020]
+	whitespace = [rune(0x0009), 0x000a, 0x000c, 0x000d, 0x0020]
 	ascii_alpha = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'.runes()
 	ascii_alphanumeric = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.runes()
+	decimal_digits = '0123456789'.runes()
+	hex_digits_lower = '0123456789abcdef'.runes()
+	hex_digits_upper = '01234566789ABCDEF'.runes()
 )
 
 struct Tokenizer {
@@ -27,6 +30,7 @@ mut:
 	attr Attribute
 	buffer strings.Builder = new_builder(50)
 	open_tags Stack<string>
+	char_ref_code rune
 }
 
 // https://html.spec.whatwg.org/multipage/parsing.html#tokenization
@@ -169,6 +173,23 @@ fn (mut t Tokenizer) look_ahead(look_for string, case_sensitive bool) bool {
 		} else {
 			return false
 		}
+	}
+}
+
+// flush_codepoints adds all the characters in the buffer to either the
+// current attribute or emits them as CharacterTokens.
+fn (mut t Tokenizer) flush_codepoints() []Token {
+	if t.return_state in [
+		.attribute_value_double_quoted,
+		.attribute_value_single_quoted,
+		.attribute_value_unquoted,
+	] {
+		mut tok := &(t.token as TagToken)
+		mut attr := &(tok.attributes[tok.attributes.len-1])
+		attr.value.write_string(builder_contents(t.buffer))
+		return []Token{}
+	} else {
+		return string_to_tokens(builder_contents(t.buffer))
 	}
 }
 
@@ -2639,19 +2660,15 @@ fn (mut t Tokenizer) cdata_section_end_state() []Token {
 // 13.2.5.72
 fn (mut t Tokenizer) character_reference_state() []Token {
 	anything_else := fn [mut t] () []Token {
-		if t.return_state in [
-			.attribute_value_double_quoted,
-			.attribute_value_single_quoted,
-			.attribute_value_unquoted,
-		] {
-			mut tok := &(t.token as TagToken)
-			mut attr := &(tok.attributes[tok.attributes.len-1])
-			attr.value.write_string(builder_contents(t.buffer))
-		}
+		toks := t.flush_codepoints()		
 		t.reconsume()
 		t.state = t.return_state
 		t.return_state = .@none
-		return t.emit_token()
+		return if toks.len == 0 {
+			t.emit_token()
+		} else {
+			toks
+		}
 	}
 
 	t.consume() or {
@@ -2674,57 +2691,280 @@ fn (mut t Tokenizer) character_reference_state() []Token {
 }
 
 // 13.2.5.73
+// NOTE: this is not implemented according to spec. I don't
+// quite understand what exactly it wants me to do.
+// https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
 fn (mut t Tokenizer) named_character_reference_state() []Token {
-	t.state = t.return_state
-	t.return_state = .@none
-	return t.emit_token()
+	mut char_ref := new_builder(50)
+	char_ref.write_rune(`&`)
+
+	anything_else := fn [mut t] () []Token {
+		toks := t.flush_codepoints()
+		t.state = .ambiguous_ampersand
+		return if toks.len > 0 { toks } else { t.ambiguous_ampersand_state() }
+	}
+
+	for {
+		t.consume() or { return anything_else() }
+
+		if t.char !in ascii_alpha { break }
+		char_ref.write_rune(t.char)
+	}
+
+	if t.char in whitespace {
+		// println
+		println('Missing semicolon after character reference parse error.')
+		t.char_ref_code = named_char_ref[builder_contents(char_ref)] or {
+			t.state = .ambiguous_ampersand
+			return t.ambiguous_ampersand_state()
+		}
+		t.buffer.write_rune(t.char_ref_code)
+		toks := t.flush_codepoints()
+		t.state = t.return_state
+		t.return_state = .@none
+		return if toks.len > 0 { toks } else { t.emit_token() }
+	}
+
+	if t.char == `;` {
+		char_ref.write_rune(`;`)
+		t.char_ref_code = named_char_ref[builder_contents(char_ref)] or {
+			t.state = .ambiguous_ampersand
+			return t.ambiguous_ampersand_state()
+		}
+		t.buffer.write_rune(t.char_ref_code)
+		toks := t.flush_codepoints()
+		t.state = t.return_state
+		t.return_state = .@none
+		return if toks.len > 0 { toks } else { t.emit_token() }
+	}
+
+	return anything_else()
 }
 
 // 13.2.5.74
 fn (mut t Tokenizer) ambiguous_ampersand_state() []Token {
-	t.state = t.return_state
-	t.return_state = .@none
-	return t.emit_token()
+	anything_else := fn [mut t] () []Token {
+		t.reconsume()
+		t.state = t.return_state
+		t.return_state = .@none
+		return t.emit_token()
+	}
+
+	t.consume() or {
+		return anything_else()
+	}
+
+	if t.char in ascii_alphanumeric {
+		if t.return_state in [
+			.attribute_value_double_quoted,
+			.attribute_value_single_quoted,
+			.attribute_value_unquoted
+		] {
+			mut tok := &(t.token as TagToken)
+			mut attr := &(tok.attributes[tok.attributes.len-1])
+			attr.value.write_rune(t.char)
+			return t.ambiguous_ampersand_state()
+		} else {
+			return [CharacterToken{t.char}]
+		}
+	}
+
+	if t.char == `;` {
+		// parse error
+		println('Unknown named character reference.')
+		// t.reconsume()
+		// t.state = t.return_state
+		// t.return_state = .@none
+		// return t.emit_token()
+	}
+
+	return anything_else()
 }
 
 // 13.2.5.75
 fn (mut t Tokenizer) numeric_character_reference_state() []Token {
-	t.state = t.return_state
-	t.return_state = .@none
-	return t.emit_token()
+	t.char_ref_code = 0
+	anything_else := fn [mut t] () []Token {
+		t.reconsume()
+		return t.decimal_character_reference_start_state()
+	}
+
+	t.consume() or {
+		return anything_else()
+	}
+
+	if t.char in [`x`, `X`] {
+		t.buffer.write_rune(t.char)
+		t.state = .hexadecimal_character_reference_start
+		return t.hexadecimal_character_reference_start_state()
+	}
+
+	return anything_else()
 }
 
 // 13.2.5.76
 fn (mut t Tokenizer) hexadecimal_character_reference_start_state() []Token {
-	t.state = t.return_state
-	t.return_state = .@none
-	return t.emit_token()
+	anything_else := fn [mut t] () []Token {
+		// parse error
+		println('Absence of digits in numeric character reference')
+		toks := t.flush_codepoints()
+		t.reconsume()
+		t.state = t.return_state
+		t.return_state = .@none
+		return if toks.len > 0 {
+			toks
+		} else {
+			t.emit_token()
+		}
+	}
+
+	t.consume() or {
+		return anything_else()
+	}
+
+	if t.char in hex_digits_lower || t.char in hex_digits_upper {
+		t.reconsume()
+		t.state = .hexadecimal_character_reference
+		return t.hexadecimal_character_reference_state()
+	}
+
+	return anything_else()
 }
 
 // 13.2.5.77
 fn (mut t Tokenizer) decimal_character_reference_start_state() []Token {
-	t.state = t.return_state
-	t.return_state = .@none
-	return t.emit_token()
+	anything_else := fn [mut t] () []Token {
+		// parse error
+		println('Absence of digits in numeric character reference')
+		toks := t.flush_codepoints()
+		t.reconsume()
+		t.state = t.return_state
+		t.return_state = .@none
+		return if toks.len > 0 {
+			toks
+		} else {
+			t.emit_token()
+		}
+	}
+
+	t.consume() or {
+		return anything_else()
+	}
+
+	if t.char in decimal_digits {
+		t.reconsume()
+		t.state = .decimal_character_reference
+		return t.decimal_character_reference_state()
+	}
+
+	return anything_else()
 }
 
 // 13.2.5.78
 fn (mut t Tokenizer) hexadecimal_character_reference_state() []Token {
-	t.state = t.return_state
-	t.return_state = .@none
-	return t.emit_token()
+	anything_else := fn [mut t] () []Token {
+		// parse error
+		println('Missing semicolor after character reference.')
+		t.reconsume()
+		t.state = .numeric_character_reference
+		return t.numeric_character_reference_state()
+	}
+
+	t.consume() or {
+		return anything_else()
+	}
+
+	if t.char in decimal_digits {
+		t.char_ref_code *= 16
+		t.char_ref_code += t.char - 0x0030
+		return t.hexadecimal_character_reference_state()
+	}
+
+	if t.char in hex_digits_upper {
+		t.char_ref_code *= 16
+		t.char_ref_code += t.char - 0x0037
+		return t.hexadecimal_character_reference_state()
+	}
+
+	if t.char in hex_digits_lower {
+		t.char_ref_code *= 16
+		t.char_ref_code += t.char - 0x0057
+		return t.hexadecimal_character_reference_state()
+	}
+
+	if t.char == `;` {
+		t.state = .numeric_character_reference_end
+		return t.numeric_character_reference_end_state()
+	}
+
+	return anything_else()
 }
 
 // 13.2.5.79
 fn (mut t Tokenizer) decimal_character_reference_state() []Token {
-	t.state = t.return_state
-	t.return_state = .@none
-	return t.emit_token()
+	anything_else := fn [mut t] () []Token {
+		// parse error
+		println('Missing semicolon after character reference parse error.')
+		t.reconsume()
+		t.state = .numeric_character_reference_end
+		return t.numeric_character_reference_end_state()
+	}
+
+	t.consume() or {
+		return anything_else()
+	}
+
+	if t.char in decimal_digits {
+		t.char_ref_code *= 10
+		t.char_ref_code += t.char - 0x0030
+		return t.decimal_character_reference_state()
+	}
+
+	if t.char == `;` {
+		t.state = .numeric_character_reference_end
+		return t.numeric_character_reference_end_state()
+	}
+
+	return anything_else()
 }
 
 // 13.2.5.80
 fn (mut t Tokenizer) numeric_character_reference_end_state() []Token {
+	if t.char_ref_code == 0x00 {
+		// parse error
+		println('Null character parse error.')
+		t.char_ref_code = 0xfffd
+	} else if t.char_ref_code > 0x10ffff {
+		// parse error
+		println('Character reference outside unicode range.')
+		t.char_ref_code = 0xfffd
+	} else if is_surrogate(t.char_ref_code) {
+		// parser error
+		println('Surrogate character reference.')
+		t.char_ref_code = 0xfffd
+	} else if is_noncharacter(t.char_ref_code) {
+		// parse error
+		println('Noncharacter character reference.')
+	} else if t.char_ref_code == 0x0d || (is_control(t.char_ref_code) && t.char_ref_code !in whitespace) {
+		// parse error
+		println('Control character reference.')
+		table := {
+			rune(0x80): rune(0x20ac),
+			0x82: 0x201a, 0x83: 0x0192, 0x84: 0x201e, 0x85: 0x2026,
+			0x86: 0x2020, 0x87: 0x2021, 0x88: 0x02c6, 0x89: 0x2030,
+			0x8a: 0x0160, 0x8b: 0x2039, 0x8c: 0x0152, 0x8e: 0x017d,
+			0x91: 0x2018, 0x92: 0x2019, 0x93: 0x201c, 0x94: 0x201d,
+			0x95: 0x2022, 0x96: 0x2013, 0x97: 0x2014, 0x98: 0x02dc,
+			0x99: 0x2122, 0x9a: 0x0161, 0x9b: 0x203a, 0x9c: 0x0153,
+			0x9e: 0x017e, 0x9f: 0x0178
+		}
+		t.char_ref_code = table[t.char_ref_code] or { t.char_ref_code }
+	}
+
+	t.buffer = new_builder(10)
+	t.buffer.write_rune(t.char_ref_code)
+	toks := t.flush_codepoints()
 	t.state = t.return_state
 	t.return_state = .@none
-	return t.emit_token()
+	return if toks.len > 0 { toks } else { t.emit_token() }
 }
