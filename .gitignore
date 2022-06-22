@@ -7,3 +7,5 @@ cyberian_tiger
 *.dylib
 *.dll
 vls.log
+
+*.code-workspace

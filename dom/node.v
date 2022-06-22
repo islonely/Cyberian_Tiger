@@ -45,11 +45,11 @@ pub type Node = Attribute | Document | Element | Text | NullNode
 struct AbstractNode {
 mut:
 	owner_document &Document = 0
-	parent_node    &Node     = &NullNode{}
-	first_child    &Node     = &NullNode{}
-	last_child     &Node     = &NullNode{}
-	prev_sibling   &Node     = &NullNode{}
-	next_sibling   &Node     = &NullNode{}
+	parent_node    &Node     = 0
+	first_child    &Node     = 0
+	last_child     &Node     = 0
+	prev_sibling   &Node     = 0
+	next_sibling   &Node     = 0
 pub mut:
 	typ       NodeType = .invalid
 	node_name string
@@ -60,12 +60,12 @@ __global:
 	text_content string
 }
 
-pub fn (n AbstractNode) str() string {
-	mut str := 'AbstractNode{\n\ttyp: $n.typ\n\tnode_name: $n.node_name\n\tbase_uri: $n.base_uri'
+pub fn (n &AbstractNode) str() string {
+	mut str := 'AbstractNode{\n\ttyp: $n.typ\n\tnode_name: $n.node_name\n\tbase_uri: $n.base_uri\n\tchildren: ['
 	for child in n.child_nodes {
-		str += '\n\t' + child.str()
+		str += '\n\t\t' + child.str()
 	}
-	str += '}\n'
+	str += '\n\t]\n}\n'
 	return str
 }
 

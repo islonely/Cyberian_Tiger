@@ -1,5 +1,7 @@
 module dom
 
+import strings
+
 [heap]
 pub struct Element {
 	AbstractNode
@@ -10,6 +12,20 @@ pub mut:
 	prefix        string
 	local_name    string
 	tag_name      string
+}
+
+pub fn (e &Element) str() string {
+	mut bldr := strings.new_builder(500)
+	bldr.write_string('<$e.local_name')
+	for attr in e.attributes {
+		bldr.write_string(' $attr.name="$attr.value"')
+	}
+	bldr.write_string('>')
+	for child in e.child_nodes {
+		bldr.write_string('\n\t' + child.str())
+	}
+	bldr.write_string('\n</$e.local_name>')
+	return bldr.str()
 }
 
 // not standard compliant; use `fn Document.createElement`.

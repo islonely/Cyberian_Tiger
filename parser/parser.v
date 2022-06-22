@@ -39,7 +39,7 @@ mut:
 	insertion_mode           InsertionMode = .initial
 	original_insertion_mode  InsertionMode = .@none
 	template_insertion_modes Stack<InsertionMode>
-	open_tags                Stack<&dom.Element>
+	open_tags                []&dom.Element
 	doc                      &dom.Document = &dom.Document{}
 }
 
@@ -72,10 +72,17 @@ pub fn (mut p Parser) parse() {
 			}
 		}
 	}
+	// println(p.doc.children())
 }
 
 // parse_character_token parses CharacterToken's emitted from the Tokenizer.
 fn (mut p Parser) parse_character_token(tok CharacterToken) {
+	if p.open_tags.len > 0 {
+		mut last_opened := p.open_tags.last()
+		last_opened.text_content += tok.data.str()
+	} else {
+		p.doc.text_content += tok.data.str()
+	}
 }
 
 // parse_comment_token parses CommentToken's emitted from the Tokenizer.
@@ -95,24 +102,25 @@ fn (mut p Parser) parse_doctype_token(tok DoctypeToken) {
 fn (mut p Parser) parse_tag_token(tok TagToken) {
 	if tok.is_start {
 		mut elem := p.doc.create_element(tok.name())
-		if p.open_tags.len() > 0 {
-			if mut last_opened := p.open_tags.peek() {
-				last_opened.append_child(elem)
-			} else {
-				println('Failed to get last opened tag.')
-				return
-			}
+		for attr in tok.attributes {
+			elem.set_attribute_node(dom.new_attribute(elem.namespace_uri, '', attr.name(), attr.value(), elem))
+		}
+
+		if p.open_tags.len > 0 {
+			mut last_opened := p.open_tags.last()
+			last_opened.append_child(elem)
 		} else {
 			p.doc.append_child(elem)
 		}
 
 		if !tok.self_closing {
-			p.open_tags.push(elem)
+			p.open_tags << elem
 		}
 	} else {
-		if mut last_opened := p.open_tags.peek() {
+		if p.open_tags.len > 0 {
+			mut last_opened := p.open_tags.last()
 			if last_opened.local_name == tok.name() {
-				p.open_tags.pop() or { panic('Failed to pop tag.') }
+				p.open_tags.pop()
 			}
 		} else {
 			println('Parse Error: Encountered closing tag, but no tags are opened.')
