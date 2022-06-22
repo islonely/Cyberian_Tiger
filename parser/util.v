@@ -1,6 +1,7 @@
 module parser
 
 import strings { Builder }
+import dom { Element }
 
 // converts a-Z to a-z; no effect on anything else
 fn rune_to_lower(r rune) rune {
@@ -65,4 +66,44 @@ fn is_control(r rune) bool {
 	} else {
 		false
 	}
+}
+
+struct OpenTagStack {
+mut:
+	stack map[int]voidptr
+	index int
+}
+
+[inline]
+fn (mut ots OpenTagStack) push(elem voidptr) {
+	ots.stack[ots.index] = elem
+	ots.index++
+}
+
+// will panic if stack is empty
+[inline]
+fn (ots OpenTagStack) peek<T>() T {
+	return ots.stack[ots.stack.len-1]
+}
+
+// will panic if stack is empty
+fn (mut ots OpenTagStack) pop<T>() T {
+	val := ots.peek<voidptr>()
+	ots.stack.delete(ots.stack.len-1)
+	ots.index--
+	return val
+}
+
+[inline]
+fn (ots OpenTagStack) len() int {
+	return ots.stack.len
+}
+
+fn (ots OpenTagStack) print_addresses() {
+	print('[0x${voidptr(ots.stack[0])}')
+	for i, elem in ots.stack {
+		if i == 0 { continue }
+		print(', ' + voidptr(elem).str())
+	}
+	println(']')
 }

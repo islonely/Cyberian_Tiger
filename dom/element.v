@@ -14,7 +14,7 @@ pub mut:
 	tag_name      string
 }
 
-pub fn (e &Element) str() string {
+pub fn (e &Element) html() string {
 	mut bldr := strings.new_builder(500)
 	bldr.write_string('<$e.local_name')
 	for attr in e.attributes {
@@ -22,7 +22,9 @@ pub fn (e &Element) str() string {
 	}
 	bldr.write_string('>')
 	for child in e.child_nodes {
-		bldr.write_string('\n\t' + child.str())
+		if child is Element {
+			bldr.write_string('\n\t' + child.html())
+		}
 	}
 	bldr.write_string('\n</$e.local_name>')
 	return bldr.str()

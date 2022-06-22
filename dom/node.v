@@ -60,8 +60,8 @@ __global:
 	text_content string
 }
 
-pub fn (n &AbstractNode) str() string {
-	mut str := 'AbstractNode{\n\ttyp: $n.typ\n\tnode_name: $n.node_name\n\tbase_uri: $n.base_uri\n\tchildren: ['
+pub fn (n AbstractNode) str() string {
+	mut str := 'AbstractNode{\n\ttyp: $n.typ\n\tnode_name: $n.node_name\n\tbase_uri: $n.base_uri\n\tnode_value: $n.node_value\n\ttext_content: $n.text_content\n\tchildren: ['
 	for child in n.child_nodes {
 		str += '\n\t\t' + child.str()
 	}
@@ -76,9 +76,7 @@ pub fn (n &AbstractNode) get_child(i int) &Node {
 
 [inline]
 pub fn (mut n AbstractNode) append_child(child &Node) {
-	unsafe {
-		n.child_nodes << child
-	}
+	n.child_nodes << child
 }
 
 [inline]

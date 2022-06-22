@@ -4,6 +4,15 @@ import datatypes { Stack }
 import dom
 import net.http
 
+const(
+	auto_self_closers = [
+		'input'
+		'br'
+		'link'
+		'meta'
+	]
+)
+
 enum InsertionMode {
 	@none
 	after_after_body
@@ -40,6 +49,7 @@ mut:
 	original_insertion_mode  InsertionMode = .@none
 	template_insertion_modes Stack<InsertionMode>
 	open_tags                []&dom.Element
+	ots						 OpenTagStack
 	doc                      &dom.Document = &dom.Document{}
 }
 
@@ -53,6 +63,7 @@ pub fn new(src []rune) Parser {
 	}
 }
 
+// new_url instantiates a parser from a URL
 pub fn new_url(url string) Parser {
 	src := http.get_text(url).runes()
 	return new(src)
@@ -72,7 +83,7 @@ pub fn (mut p Parser) parse() {
 			}
 		}
 	}
-	println(p.doc.children())
+	println(p.doc.children()[0].html())
 }
 
 // parse_character_token parses CharacterToken's emitted from the Tokenizer.
@@ -106,26 +117,61 @@ fn (mut p Parser) parse_tag_token(tok TagToken) {
 			elem.set_attribute_node(dom.new_attribute(elem.namespace_uri, '', attr.name(), attr.value(), elem))
 		}
 
-		if p.open_tags.len > 0 {
-			mut last_opened := p.open_tags.last()
-			last_opened.append_child(elem)
+		if p.ots.len() > 0 {
+			mut last := p.ots.peek<&dom.Element>()
+			last.append_child(elem)
 		} else {
 			p.doc.append_child(elem)
 		}
 
-		if !tok.self_closing {
-			p.open_tags << elem
+		if !tok.self_closing && tok.name() !in auto_self_closers {
+			p.ots.push(elem)
 		}
+		mut test_arr := []voidptr{}
+		test_arr << elem
+		println('============ ${elem.local_name.to_upper()} TAG ============')
+		println('Current:\t' + voidptr(elem).str())
+		println('HTML:\t\t' + voidptr(p.doc.children()[0]).str())
+		print('Stack:\t\t')
+		p.ots.print_addresses()
+		println('Test Array:$test_arr')
 	} else {
-		if p.open_tags.len > 0 {
-			mut last_opened := p.open_tags.last()
-			if last_opened.local_name == tok.name() {
-				p.open_tags.pop()
+		if p.ots.len() > 0 {
+			last := p.ots.peek<&dom.Element>()
+			if last.local_name == tok.name() {
+				p.ots.pop<&dom.Element>()
 			}
 		} else {
-			println('Parse Error: Encountered closing tag, but no tags are opened.')
+			println('Parse Error: Encountered closing tag; no start tags open.')
 		}
 	}
+
+	// if tok.is_start {
+	// 	mut elem := p.doc.create_element(tok.name())
+	// 	for attr in tok.attributes {
+	// 		elem.set_attribute_node(dom.new_attribute(elem.namespace_uri, '', attr.name(), attr.value(), elem))
+	// 	}
+
+	// 	if p.open_tags.len > 0 {
+	// 		mut last_opened := p.open_tags.last()
+	// 		last_opened.append_child(elem)
+	// 	} else {
+	// 		p.doc.append_child(elem)
+	// 	}
+
+	// 	if !tok.self_closing && tok.name() !in auto_self_closers {
+	// 		p.open_tags << elem
+	// 	}
+	// } else {
+	// 	if p.open_tags.len > 0 {
+	// 		mut last_opened := p.open_tags.last()
+	// 		if last_opened.local_name == tok.name() {
+	// 			p.open_tags.pop()
+	// 		}
+	// 	} else {
+	// 		println('Parse Error: Encountered closing tag, but no tags are opened.')
+	// 	}
+	// }
 }
 
 // parse_eof_token parses EOFToken's emitted from the Tokenizer.
