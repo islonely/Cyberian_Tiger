@@ -72,7 +72,7 @@ pub fn (mut p Parser) parse() {
 			}
 		}
 	}
-	// println(p.doc.children())
+	println(p.doc.children())
 }
 
 // parse_character_token parses CharacterToken's emitted from the Tokenizer.
