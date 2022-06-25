@@ -28,12 +28,12 @@ pub fn (tok DoctypeToken) name() string {
 
 [inline]
 pub fn (tok DoctypeToken) public_identifier() string {
-	return builder_contents(tok.name)
+	return builder_contents(tok.public_identifier)
 }
 
 [inline]
 pub fn (tok DoctypeToken) system_identifier() string {
-	return builder_contents(tok.name)
+	return builder_contents(tok.system_identifier)
 }
 
 [inline]
@@ -52,11 +52,13 @@ mut:
 	attributes []Attribute
 }
 
+// name returns the contents of the `TagToken.name` field.
 [inline]
 pub fn (tok TagToken) name() string {
 	return builder_contents(tok.name)
 }
 
+// str returns the HTML representation of the `TagToken`.
 [inline]
 pub fn (tok TagToken) str() string {
 	mut bldr := new_builder(100)

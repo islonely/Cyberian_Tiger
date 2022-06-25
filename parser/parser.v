@@ -13,6 +13,7 @@ const(
 	]
 )
 
+// InsertionMode is the state of `Parser`.
 enum InsertionMode {
 	@none
 	after_after_body
@@ -40,6 +41,23 @@ enum InsertionMode {
 	text
 }
 
+// parse_url fetches the HTML data from a URL and parses it.
+// Returns an error if the connection to the URL fails.
+pub fn parse_url(url string) ?&dom.Document {
+	res := http.get(url)?
+	mut p := parser.new(res.body.runes())
+	p.parse()
+	return p.doc
+}
+
+// parse_runes parses the HTML data provided as an array of
+// runes.
+pub fn parse_runes(src []rune) &dom.Document {
+	mut p := new(src)
+	p.parse()
+	return p.doc
+}
+
 // Parser parses the tokens emitted from the Tokenizer.
 struct Parser {
 	source []rune
@@ -48,12 +66,11 @@ mut:
 	insertion_mode           InsertionMode = .initial
 	original_insertion_mode  InsertionMode = .@none
 	template_insertion_modes Stack<InsertionMode>
-	open_tags                []&dom.Element
 	ots						 OpenTagStack
 	doc                      &dom.Document = &dom.Document{}
 }
 
-// new instantiates a Parser
+// new instantiates a Parser out of the provided runes.
 pub fn new(src []rune) Parser {
 	return Parser{
 		source: src
@@ -63,14 +80,14 @@ pub fn new(src []rune) Parser {
 	}
 }
 
-// new_url instantiates a parser from a URL
+// new_url instantiates a parser from a URL.
 pub fn new_url(url string) Parser {
 	src := http.get_text(url).runes()
 	return new(src)
 }
 
 // parse parses the tokens emitted from the Tokenizer.
-pub fn (mut p Parser) parse() {
+pub fn (mut p Parser) parse() &dom.Document {
 	for p.tokenizer.state != .eof {
 		tokens := p.tokenizer.emit_token()
 		for tok in tokens {
@@ -83,14 +100,21 @@ pub fn (mut p Parser) parse() {
 			}
 		}
 	}
-	println(p.doc.children()[0].html())
+	
+	if p.doc.children().len > 0 {
+		c := p.doc.children()
+		p.doc.first_child = c[0]
+		p.doc.last_child = c[c.len-1]
+	}
+
+	return p.doc
 }
 
 // parse_character_token parses CharacterToken's emitted from the Tokenizer.
 fn (mut p Parser) parse_character_token(tok CharacterToken) {
-	if p.open_tags.len > 0 {
-		mut last_opened := p.open_tags.last()
-		last_opened.text_content += tok.data.str()
+	if p.ots.len() > 0 {
+		mut last := &(p.ots.peek() as dom.Element)
+		last.text_content += tok.data.str()
 	} else {
 		p.doc.text_content += tok.data.str()
 	}
@@ -112,68 +136,37 @@ fn (mut p Parser) parse_doctype_token(tok DoctypeToken) {
 // parse_tag_token parses TagToken's emitted from the Tokenizer.
 fn (mut p Parser) parse_tag_token(tok TagToken) {
 	if tok.is_start {
-		mut elem := p.doc.create_element(tok.name())
+		mut n := &dom.Node(p.doc.create_element(tok.name()))
+		mut elem := &(n as dom.Element)
 		for attr in tok.attributes {
 			elem.set_attribute_node(dom.new_attribute(elem.namespace_uri, '', attr.name(), attr.value(), elem))
 		}
 
 		if p.ots.len() > 0 {
-			mut last := p.ots.peek<&dom.Element>()
-			last.append_child(elem)
+			mut lastn := p.ots.peek()
+			mut last := &(lastn as dom.Element)
+			last.append_child(n)
 		} else {
-			p.doc.append_child(elem)
+			p.doc.append_child(n)
 		}
 
 		if !tok.self_closing && tok.name() !in auto_self_closers {
-			p.ots.push(elem)
+			p.ots.push(n)
 		}
-		mut test_arr := []voidptr{}
-		test_arr << elem
-		println('============ ${elem.local_name.to_upper()} TAG ============')
-		println('Current:\t' + voidptr(elem).str())
-		println('HTML:\t\t' + voidptr(p.doc.children()[0]).str())
-		print('Stack:\t\t')
-		p.ots.print_addresses()
-		println('Test Array:$test_arr')
 	} else {
 		if p.ots.len() > 0 {
-			last := p.ots.peek<&dom.Element>()
+			lastn := p.ots.peek()
+			last := &(lastn as dom.Element)
 			if last.local_name == tok.name() {
-				p.ots.pop<&dom.Element>()
+				p.ots.pop()
 			}
 		} else {
 			println('Parse Error: Encountered closing tag; no start tags open.')
 		}
 	}
-
-	// if tok.is_start {
-	// 	mut elem := p.doc.create_element(tok.name())
-	// 	for attr in tok.attributes {
-	// 		elem.set_attribute_node(dom.new_attribute(elem.namespace_uri, '', attr.name(), attr.value(), elem))
-	// 	}
-
-	// 	if p.open_tags.len > 0 {
-	// 		mut last_opened := p.open_tags.last()
-	// 		last_opened.append_child(elem)
-	// 	} else {
-	// 		p.doc.append_child(elem)
-	// 	}
-
-	// 	if !tok.self_closing && tok.name() !in auto_self_closers {
-	// 		p.open_tags << elem
-	// 	}
-	// } else {
-	// 	if p.open_tags.len > 0 {
-	// 		mut last_opened := p.open_tags.last()
-	// 		if last_opened.local_name == tok.name() {
-	// 			p.open_tags.pop()
-	// 		}
-	// 	} else {
-	// 		println('Parse Error: Encountered closing tag, but no tags are opened.')
-	// 	}
-	// }
 }
 
 // parse_eof_token parses EOFToken's emitted from the Tokenizer.
 fn (mut p Parser) parse_eof_token(tok EOFToken) {
+	println('EOF#$tok.name: $tok.mssg')
 }

@@ -17,6 +17,7 @@ const (
 	hex_digits_upper = '01234566789ABCDEF'.runes()
 )
 
+// Tokenizer is responsible for converting raw HTML data into tokens.
 struct Tokenizer {
 	source []rune
 mut:
@@ -33,6 +34,7 @@ mut:
 	char_ref_code rune
 }
 
+// TokenizerState is the state of `Tokenizer`.
 // https://html.spec.whatwg.org/multipage/parsing.html#tokenization
 enum TokenizerState {
 	@none
@@ -302,6 +304,7 @@ fn (mut t Tokenizer) emit_token() []Token {
 }
 
 // 13.2.5.1
+// https://html.spec.whatwg.org/#data-state
 fn (mut t Tokenizer) data_state() []Token {
 	t.consume() or {
 		t.state = .eof
@@ -330,6 +333,7 @@ fn (mut t Tokenizer) data_state() []Token {
 }
 
 // 13.2.5.2
+// https://html.spec.whatwg.org/#rcdata-state
 fn (mut t Tokenizer) rcdata_state() []Token {
 	t.consume() or {
 		t.state = .eof

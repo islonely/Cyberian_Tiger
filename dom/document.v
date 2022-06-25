@@ -1,5 +1,7 @@
 module dom
 
+import strings { new_builder }
+
 const (
 	html_namespace   = 'http://www.w3.org/1999/xhtml'
 	mathml_namespace = 'http://www.w3.org/1998/Math/MathML'
@@ -17,6 +19,19 @@ __global:
 	document_element &Element = 0
 }
 
+// html returns the HTML representation of `Document`.
+pub fn (d Document) html() string {
+	mut bldr := new_builder(1000)
+	bldr.writeln(d.doctype.html())
+	for child in d.child_nodes {
+		if child is Element {
+			bldr.write_string(child.html())
+		}
+	}
+	return bldr.str()
+}
+
+// children returns the `child_nodes` of `Document`.
 pub fn (d &Document) children() []&Element {
 	mut els := []&Element{cap: d.child_nodes.len}
 	for i in 0 .. d.child_nodes.len {

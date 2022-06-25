@@ -1,7 +1,7 @@
 module parser
 
 import strings { Builder }
-import dom { Element }
+import dom { Node }
 
 // converts a-Z to a-z; no effect on anything else
 fn rune_to_lower(r rune) rune {
@@ -70,27 +70,25 @@ fn is_control(r rune) bool {
 
 struct OpenTagStack {
 mut:
-	stack map[int]voidptr
-	index int
+	stack []&Node
 }
 
 [inline]
-fn (mut ots OpenTagStack) push(elem voidptr) {
-	ots.stack[ots.index] = elem
-	ots.index++
+fn (mut ots OpenTagStack) push(elem &Node) {
+	ots.stack << elem
 }
 
 // will panic if stack is empty
 [inline]
-fn (ots OpenTagStack) peek<T>() T {
-	return ots.stack[ots.stack.len-1]
+fn (ots OpenTagStack) peek() &Node {
+	return ots.peek_offset(0)
 }
 
 // will panic if stack is empty
-fn (mut ots OpenTagStack) pop<T>() T {
-	val := ots.peek<voidptr>()
-	ots.stack.delete(ots.stack.len-1)
-	ots.index--
+[inline]
+fn (mut ots OpenTagStack) pop() &Node {
+	val := ots.peek()
+	ots.stack.pop()
 	return val
 }
 
@@ -99,11 +97,8 @@ fn (ots OpenTagStack) len() int {
 	return ots.stack.len
 }
 
-fn (ots OpenTagStack) print_addresses() {
-	print('[0x${voidptr(ots.stack[0])}')
-	for i, elem in ots.stack {
-		if i == 0 { continue }
-		print(', ' + voidptr(elem).str())
-	}
-	println(']')
+// will panic if stack is empty
+[inline]
+fn (ots OpenTagStack) peek_offset(x int) &Node {
+	return ots.stack[ots.stack.len-1+x]
 }

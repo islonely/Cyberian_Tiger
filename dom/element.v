@@ -1,7 +1,8 @@
 module dom
 
-import strings
+import strings { new_builder }
 
+// Element reprensents an HTML DOM element/tag.
 [heap]
 pub struct Element {
 	AbstractNode
@@ -15,15 +16,19 @@ pub mut:
 }
 
 pub fn (e &Element) html() string {
-	mut bldr := strings.new_builder(500)
+	mut bldr := new_builder(500)
 	bldr.write_string('<$e.local_name')
 	for attr in e.attributes {
 		bldr.write_string(' $attr.name="$attr.value"')
 	}
 	bldr.write_string('>')
+	if e.text_content.len > 0 {
+		str := e.text_content.replace('\n', '\\n').replace('\t', '\\t').replace('\f', '\\f')
+		bldr.write_string('\n$str')
+	}
 	for child in e.child_nodes {
 		if child is Element {
-			bldr.write_string('\n\t' + child.html())
+			bldr.write_string('\n' + child.html())
 		}
 	}
 	bldr.write_string('\n</$e.local_name>')
@@ -155,7 +160,7 @@ pub fn (e &Element) has_attribute_ns(namespace_uri string, local_name string) bo
 	return false
 }
 
-// get_attribute_node returns the Attribute node from `child_nodes`
+// get_attribute_node returns the Attribute node from `attributes`
 // with a matching `qualified_name` or an error if none match.
 pub fn (e &Element) get_attribute_node(qualified_name string) ?&Attribute {
 	for i := 0; i < e.attributes.len; i++ {
@@ -167,6 +172,9 @@ pub fn (e &Element) get_attribute_node(qualified_name string) ?&Attribute {
 	return error('No matching attribute found.')
 }
 
+// get_attribute_node_ns returns the `Attribute` node from `attributes`
+// with a matching `namespace_uri` and `local_name` or an error
+// if no matches are found.
 pub fn (e &Element) get_attribute_node_ns(namespace_uri string, local_name string) ?&Attribute {
 	for i := 0; i < e.attributes.len; i++ {
 		if e.attributes[i].namespace_uri == namespace_uri
@@ -178,11 +186,14 @@ pub fn (e &Element) get_attribute_node_ns(namespace_uri string, local_name strin
 	return error('No matching attributes found.')
 }
 
+// set_attribute_node pushes a `Attribute` to `attributes`.
 [inline]
 pub fn (mut e Element) set_attribute_node(a &Attribute) {
 	e.attributes << a
 }
 
+// get_elements_by_tag_name returns an array of `Element`s that
+// have a qualified name matching the one provided.
 pub fn (e &Element) get_elements_by_tag_name(qualified_name string) []&Element {
 	mut els := []&Element{cap: e.child_nodes.len}
 	for i, _ in e.child_nodes {
@@ -194,6 +205,8 @@ pub fn (e &Element) get_elements_by_tag_name(qualified_name string) []&Element {
 	return els
 }
 
+// get_elements_by_tag_name returns an array of `Element`s that
+// have a matching `namespace_uri` and `local_name`.
 pub fn (e &Element) get_elements_by_tag_name_ns(namespace_uri string, local_name string) []&Element {
 	mut els := []&Element{cap: e.child_nodes.len}
 	for i, _ in e.child_nodes {
@@ -205,14 +218,25 @@ pub fn (e &Element) get_elements_by_tag_name_ns(namespace_uri string, local_name
 	return els
 }
 
+// inner_html returns the HTML string equivalent of this
+// `Element`'s child `Element`s.
 pub fn (e &Element) inner_html() string {
-	return 'warning: inner_html function not yet implemented.'
+	mut bldr := new_builder(1000)
+	for child in e.child_nodes {
+		if child is Element {
+			bldr.write_string(child.html())
+		} else if child is Text {
+			bldr.write_string(child.str())
+		}
+	}
+	return bldr.str()
 }
 
 pub fn (e &Element) outer_html() string {
 	return 'warning: outer_html function not yet implemented'
 }
 
+// get_qualified_name returns the qualified name of `Element`.
 pub fn (e &Element) get_qualified_name() string {
 	return if e.prefix.len == 0 {
 		e.local_name
@@ -221,24 +245,20 @@ pub fn (e &Element) get_qualified_name() string {
 	}
 }
 
-// pub fn (e &Element) remove() ? {
-// 	mut parent := ptr_optional(&e.parent_node) or { return error('Element has no parent.') }
-// }
-
-pub fn (e &Element) first_child() ?&Element {
-	if e.child_nodes.len == 0 {
-		return error('Element has no children.')
-	}
-	unsafe {
-		return &Element(ptr_optional(&e.child_nodes[0])?)
+// remove_child deletes the `Node` if it exists or returns
+// an error.
+pub fn (mut e Element) remove_child(n &Node) ? {
+	index := e.child_nodes.index(n)
+	if index >= 0 {
+		e.child_nodes.delete(index)
+	} else {
+		return error('No child node matches provided node.')
 	}
 }
 
-pub fn (e &Element) last_child() ?&Element {
-	if e.child_nodes.len == 0 {
-		return error('Element has no children.')
-	}
-	unsafe {
-		return &Element(ptr_optional(&e.child_nodes[e.child_nodes.len - 1])?)
-	}
+// remove deletes this `Element` from the parent.
+pub fn (e &Element) remove() ? {
+	mut parent := ptr_optional(&e.parent_node) or { return error('Element has no parent.') }
+	mut parent_element := &(parent as Element)
+	parent_element.remove_child(e) ?
 }
